@@ -133,4 +133,4 @@ mvsep download 20260227153708-abc123-vocals.wav -o ./output
 
 ## License
 
-MIT License
+Apache License 2.0

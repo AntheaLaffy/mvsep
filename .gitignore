@@ -135,8 +135,11 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
+# UV
+uv.lock
+
+# Logs
+logs/
 
 # mypy
 .mypy_cache/
