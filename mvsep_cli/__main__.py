@@ -32,6 +32,7 @@ def cmd_upload(args):
         output_format=output_format,
         add_opt1=args.add_opt1,
         add_opt2=args.add_opt2,
+        add_opt3=args.add_opt3,
         is_demo=args.is_demo,
     )
 
@@ -191,6 +192,7 @@ def cmd_run(args):
         output_format=output_format,
         add_opt1=args.add_opt1,
         add_opt2=args.add_opt2,
+        add_opt3=args.add_opt3,
         is_demo=args.is_demo,
     )
 
@@ -315,31 +317,38 @@ def cmd_history(args):
 
 
 def cmd_list_types(args):
-    config = Config()
+    from mvsep_cli.api import MVSEP_API
+
+    api = MVSEP_API(get_api_token())
+    algorithms = api.get_algorithms()
 
     if args.models:
-        sep_type = args.models
-        model_opts = config.get_model_options(sep_type)
-        sep_name = config.SEP_TYPES.get(sep_type, "Unknown")
+        for algo in algorithms:
+            if algo["render_id"] == args.models:
+                print(f"Separation type: {algo['render_id']} - {algo['name']}")
+                print(f"\nModel options:")
+                import json
 
-        print(f"Separation type: {sep_type} - {sep_name}")
-
-        if not model_opts:
-            print("No additional model options for this separation type.")
-            return 0
-
-        for opt_key, opt_list in model_opts.items():
-            print(f"\n{opt_key}:")
-            for opt in opt_list:
-                print(f"  {opt['value']:>3} - {opt['name']}")
-        return 0
+                for field in algo.get("algorithm_fields", []):
+                    print(f"\n  {field['name']}:")
+                    try:
+                        options = json.loads(field["options"])
+                        for key, value in sorted(
+                            options.items(), key=lambda x: str(x[0])
+                        ):
+                            print(f"    {key}: {value}")
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+                return 0
+        print(f"Algorithm with ID {args.models} not found.")
+        return 1
 
     if args.search:
         keyword = args.search.lower()
         results = [
-            (val, name)
-            for val, name in Config.SEP_TYPES.items()
-            if keyword in name.lower()
+            (algo["render_id"], algo["name"])
+            for algo in algorithms
+            if keyword in algo["name"].lower()
         ]
         if results:
             print(f"Search results for '{args.search}':")
@@ -351,16 +360,45 @@ def cmd_list_types(args):
 
     if args.popular:
         print("Popular separation types:")
-        for val, name in Config.POPULAR_SEP_TYPES.items():
-            print(f"  {val}: {name}")
-    elif args.formats:
-        print("All output formats:")
-        for val, name in Config.OUTPUT_FORMATS.items():
-            print(f"  {val}: {name}")
+        for algo in sorted(algorithms, key=lambda x: x["render_id"])[:10]:
+            print(f"  {algo['render_id']}: {algo['name']}")
     else:
         print("All separation types:")
-        for val, name in Config.SEP_TYPES.items():
-            print(f"  {val}: {name}")
+        for algo in sorted(algorithms, key=lambda x: x["render_id"]):
+            print(f"  {algo['render_id']}: {algo['name']}")
+    return 0
+
+
+def cmd_algorithms(args):
+    from mvsep_cli.api import MVSEP_API
+
+    api = MVSEP_API(get_api_token(), debug=args.debug)
+
+    if args.id:
+        algorithms = api.get_algorithms()
+        for algo in algorithms:
+            if algo["render_id"] == args.id:
+                print(f"Separation type: {algo['render_id']} - {algo['name']}")
+                print(f"\nModel options:")
+                for field in algo.get("algorithm_fields", []):
+                    print(f"\n  {field['name']}:")
+                    import json
+
+                    try:
+                        options = json.loads(field["options"])
+                        for key, value in sorted(
+                            options.items(), key=lambda x: str(x[0])
+                        ):
+                            print(f"    {key}: {value}")
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+                return 0
+        print(f"Algorithm with ID {args.id} not found.")
+        return 1
+
+    algo_dict = api.get_algorithms_formatted()
+    for algo_id in sorted(algo_dict.keys()):
+        print(algo_dict[algo_id])
 
     return 0
 
@@ -393,6 +431,7 @@ def main():
     )
     p_upload.add_argument("--add-opt1", help="Additional option 1")
     p_upload.add_argument("--add-opt2", help="Additional option 2")
+    p_upload.add_argument("--add-opt3", help="Additional option 3")
     p_upload.add_argument(
         "--demo", dest="is_demo", action="store_true", help="Publish to demo page"
     )
@@ -449,6 +488,7 @@ def main():
     )
     p_run.add_argument("--add-opt1", help="Additional option 1")
     p_run.add_argument("--add-opt2", help="Additional option 2")
+    p_run.add_argument("--add-opt3", help="Additional option 3")
     p_run.add_argument(
         "--demo", dest="is_demo", action="store_true", help="Publish to demo page"
     )
@@ -506,6 +546,17 @@ def main():
         help="Search separation types by keyword",
     )
     p_list.set_defaults(func=cmd_list_types)
+
+    p_algos = subparsers.add_parser(
+        "algorithms", help="List available algorithms from API"
+    )
+    p_algos.add_argument(
+        "-d", "--debug", action="store_true", help="Enable debug output"
+    )
+    p_algos.add_argument(
+        "-i", "--id", type=int, help="Show detailed options for a specific algorithm ID"
+    )
+    p_algos.set_defaults(func=cmd_algorithms)
 
     p_history = subparsers.add_parser("history", help="Show task history")
     p_history.set_defaults(func=cmd_history)

@@ -2,7 +2,8 @@ import os
 import time
 import json
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
+from requests.exceptions import RequestException
 
 TASK_META_FILE = os.path.expanduser("~/.mvsep_tasks.json")
 
@@ -43,8 +44,18 @@ class MVSEP_API:
 
     FINAL_STATUSES = {STATUS_DONE, STATUS_FAILED, STATUS_NOT_FOUND}
 
-    def __init__(self, api_token: str, base_url: Optional[str] = None):
+    def __init__(
+        self,
+        api_token: str,
+        base_url: Optional[str] = None,
+        retries: int = 30,
+        retry_interval: int = 20,
+        debug: bool = False,
+    ):
         self.api_token = api_token
+        self.retries = retries
+        self.retry_interval = retry_interval
+        self.debug = debug
         if base_url:
             self.base_url = base_url
         else:
@@ -54,6 +65,73 @@ class MVSEP_API:
             self.base_url = config.base_url
 
         self.api_url = f"{self.base_url}/api"
+        self.headers = {"User-Agent": "MVSEP Python Client/1.0"}
+
+    def _log_debug(self, message: str) -> None:
+        if self.debug:
+            print(f"[DEBUG] {message}")
+
+    def _make_request(
+        self,
+        method: str,
+        endpoint: str,
+        params: Optional[Dict] = None,
+        data: Optional[Dict] = None,
+        files: Optional[Dict] = None,
+        stream: bool = False,
+    ) -> requests.Response:
+        url = f"{self.api_url}/{endpoint.lstrip('/')}"
+
+        self._log_debug(f"Making {method} request to {url}")
+
+        for attempt in range(self.retries + 1):
+            try:
+                response = requests.request(
+                    method,
+                    url,
+                    params=params,
+                    data=data,
+                    files=files,
+                    headers=self.headers,
+                    stream=stream,
+                    timeout=(600, 1200),
+                )
+
+                self._log_debug(f"Response status: {response.status_code}")
+
+                if response.status_code == 429:
+                    retry_after = int(
+                        response.headers.get("Retry-After", self.retry_interval)
+                    )
+                    self._log_debug(f"Rate limited, retrying after {retry_after}s")
+                    time.sleep(retry_after)
+                    continue
+                if response.status_code == 400:
+                    time.sleep(self.retry_interval)
+                    continue
+                if 500 <= response.status_code < 600 and attempt < self.retries:
+                    self._log_debug(f"Server error {response.status_code}, retrying...")
+                    time.sleep(self.retry_interval)
+                    continue
+
+                response.raise_for_status()
+                return response
+
+            except requests.exceptions.HTTPError as e:
+                self._log_debug(f"HTTP error: {str(e)}")
+                if e.response.status_code // 100 == 4 and e.response.status_code != 429:
+                    raise
+                if attempt == self.retries:
+                    raise
+                time.sleep(self.retry_interval)
+            except RequestException as e:
+                self._log_debug(f"Request exception: {str(e)}")
+                if attempt == self.retries:
+                    raise Exception(
+                        f"Request failed after {self.retries} retries: {str(e)}"
+                    )
+                time.sleep(self.retry_interval)
+        raise Exception("Unexpected error in request handling")
 
     def _save_task_meta(self, hash_val: str, original_filename: str):
         meta = {}
@@ -85,60 +163,85 @@ class MVSEP_API:
 
     def create_task(
         self,
-        audio_file: str,
+        audio_file: Optional[str] = None,
         sep_type: int = 20,
         output_format: int = 0,
         add_opt1: Optional[str] = None,
         add_opt2: Optional[str] = None,
+        add_opt3: Optional[str] = None,
+        remote_url: Optional[str] = None,
+        remote_type: Optional[str] = None,
         is_demo: bool = False,
     ) -> Dict[str, Any]:
-        url = f"{self.api_url}/separation/create"
+        api_url = f"{self.api_url}/separation/create"
 
-        if not os.path.exists(audio_file):
-            raise FileNotFoundError(f"Audio file not found: {audio_file}")
+        if audio_file and remote_url:
+            raise ValueError("Cannot specify both audio_file and remote_url")
 
-        filesize = os.path.getsize(audio_file)
-        print(f"File size: {filesize / 1024 / 1024:.1f} MB", flush=True)
-        print("Uploading...", flush=True)
+        files = {}
+        data = {
+            "api_token": self.api_token,
+            "sep_type": str(sep_type),
+            "output_format": str(output_format),
+            "is_demo": "1" if is_demo else "0",
+        }
 
-        with UploadProgressFile(audio_file, self._upload_progress) as upload_file:
-            files = {
-                "audiofile": (os.path.basename(audio_file), upload_file, "audio/wav")
-            }
-            data = {
-                "api_token": self.api_token,
-                "sep_type": str(sep_type),
-                "output_format": str(output_format),
-                "is_demo": "1" if is_demo else "0",
-            }
-            if add_opt1:
-                data["add_opt1"] = add_opt1
-            if add_opt2:
-                data["add_opt2"] = add_opt2
+        if add_opt1:
+            data["add_opt1"] = add_opt1
+        if add_opt2:
+            data["add_opt2"] = add_opt2
+        if add_opt3:
+            data["add_opt3"] = add_opt3
 
-            response = requests.post(url, files=files, data=data)
-            print()  # newline after progress
+        if audio_file:
+            if not os.path.exists(audio_file):
+                raise FileNotFoundError(f"Audio file not found: {audio_file}")
 
-            if response.status_code != 200:
-                print(f"Server error ({response.status_code}): {response.text[:500]}")
+            filesize = os.path.getsize(audio_file)
+            print(f"File size: {filesize / 1024 / 1024:.1f} MB", flush=True)
+            print("Uploading...", flush=True)
 
-            response.raise_for_status()
-            result = response.json()
+            with UploadProgressFile(audio_file, self._upload_progress) as upload_file:
+                files = {
+                    "audiofile": (
+                        os.path.basename(audio_file),
+                        upload_file,
+                        "audio/wav",
+                    )
+                }
+                response = requests.post(api_url, files=files, data=data)
+                print()  # newline after progress
+        elif remote_url:
+            self._log_debug(f"Processing remote URL: {remote_url}")
+            data["url"] = remote_url
+            if remote_type:
+                data["remote_type"] = remote_type
+            response = requests.post(api_url, data=data)
+        else:
+            raise ValueError("Either audio_file or remote_url must be provided")
 
-            if not result.get("success"):
-                error_msg = result.get("data", {}).get("message", "Unknown error")
-                raise Exception(f"Failed to create task: {error_msg}")
+        if response.status_code != 200:
+            print(f"Server error ({response.status_code}): {response.text[:500]}")
 
-            task_data = result["data"]
-            hash_val = task_data.get("hash")
-            if hash_val:
-                self._save_task_meta(hash_val, audio_file)
+        response.raise_for_status()
+        result = response.json()
 
-            return task_data
+        if not result.get("success"):
+            error_msg = result.get("data", {}).get("message", "Unknown error")
+            raise Exception(f"Failed to create task: {error_msg}")
 
-    def get_status(self, hash: str) -> Dict[str, Any]:
+        task_data = result["data"]
+        hash_val = task_data.get("hash")
+        if hash_val and audio_file:
+            self._save_task_meta(hash_val, audio_file)
+
+        return task_data
+
+    def get_status(self, hash: str, mirror: int = 0) -> Dict[str, Any]:
         url = f"{self.api_url}/separation/get"
-        params = {"hash": hash}
+        params = {"hash": hash, "mirror": str(mirror)}
+        if mirror == 1:
+            params["api_token"] = self.api_token
 
         response = requests.get(url, params=params)
         response.raise_for_status()
@@ -248,10 +351,92 @@ class MVSEP_API:
         response.raise_for_status()
         return response.json()
 
-    def get_algorithms(self, scopes: str = "single_upload") -> Dict[str, Any]:
+    def get_algorithms(self, scopes: str = "single_upload") -> List[Dict[str, Any]]:
         url = f"{self.api_url}/app/algorithms"
         params = {"scopes": scopes}
 
         response = requests.get(url, params=params)
         response.raise_for_status()
+        return response.json()
+
+    def get_algorithms_formatted(self, scopes: str = "single_upload") -> Dict[int, str]:
+        algorithms = self.get_algorithms(scopes)
+        import json
+
+        algo_dict = {}
+
+        for algo in algorithms:
+            s = f"\nID: {algo['render_id']} - {algo['name']}"
+            algo_dict[algo["render_id"]] = s + "\n"
+
+            for field in algo.get("algorithm_fields", []):
+                s = f"\t{field['name']}"
+                algo_dict[algo["render_id"]] += s + "\n"
+                try:
+                    options = json.loads(field["options"])
+                    for key, value in sorted(options.items(), key=lambda x: str(x[0])):
+                        s = f"\t\t{key}: {value}"
+                        algo_dict[algo["render_id"]] += s + "\n"
+                except (json.JSONDecodeError, KeyError):
+                    pass
+
+        return algo_dict
+
+    def get_queue_info(self) -> Dict[str, Any]:
+        response = self._make_request("GET", "app/queue")
+        return response.json()
+
+    def get_news(
+        self, lang: str = "en", start: int = 0, limit: int = 10
+    ) -> Dict[str, Any]:
+        params = {"lang": lang, "start": start, "limit": limit}
+        response = self._make_request("GET", "app/news", params=params)
+        return response.json()
+
+    def get_separation_history(self, start: int = 0, limit: int = 10) -> Dict[str, Any]:
+        params = {"api_token": self.api_token, "start": start, "limit": limit}
+        response = self._make_request("GET", "app/separation_history", params=params)
+        return response.json()
+
+    def enable_long_filenames(self) -> Dict[str, Any]:
+        data = {"api_token": self.api_token}
+        response = self._make_request("POST", "app/enable_long_filenames", data=data)
+        return response.json()
+
+    def disable_long_filenames(self) -> Dict[str, Any]:
+        data = {"api_token": self.api_token}
+        response = self._make_request("POST", "app/disable_long_filenames", data=data)
+        return response.json()
+
+    def enable_premium(self) -> Dict[str, Any]:
+        data = {"api_token": self.api_token}
+        response = self._make_request("POST", "app/enable_premium", data=data)
+        return response.json()
+
+    def disable_premium(self) -> Dict[str, Any]:
+        data = {"api_token": self.api_token}
+        response = self._make_request("POST", "app/disable_premium", data=data)
+        return response.json()
+
+    def create_quality_entry(
+        self,
+        zip_path: str,
+        algo_name: str,
+        main_text: str,
+        dataset_type: int = 0,
+        ensemble: int = 0,
+        password: str = "",
+    ) -> Dict[str, Any]:
+        data = {
+            "api_token": self.api_token,
+            "algo_name": algo_name,
+            "main_text": main_text,
+            "dataset_type": str(dataset_type),
+            "ensemble": str(ensemble),
+            "password": password,
+        }
+        files = {"zipfile": open(zip_path, "rb")}
+        response = self._make_request(
+            "POST", "quality_checker/add", data=data, files=files
+        )
         return response.json()
