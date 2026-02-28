@@ -32,8 +32,11 @@ pip install mvsep-cli
 
 ```bash
 # 克隆仓库
-git clone https://github.com/AntheaLaffy/mvsep.git
+git clone https://github.com/mvsep/mvsep-cli.git
 cd mvsep-cli
+
+# 安装依赖
+pip install -r requirements.txt
 
 # 安装
 pip install -e .

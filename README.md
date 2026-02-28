@@ -32,8 +32,11 @@ pip install mvsep-cli
 
 ```bash
 # Clone repository
-git clone https://github.com/AntheaLaffy/mvsep.git
+git clone https://github.com/mvsep/mvsep-cli.git
 cd mvsep-cli
+
+# Install dependencies
+pip install -r requirements.txt
 
 # Install
 pip install -e .
