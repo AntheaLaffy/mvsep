@@ -32,7 +32,7 @@ pip install mvsep-cli
 
 ```bash
 # 克隆仓库
-git clone https://github.com/mvsep/mvsep-cli.git
+git clone https://github.com/AntheaLaffy/mvsep.git
 cd mvsep-cli
 
 # 安装
