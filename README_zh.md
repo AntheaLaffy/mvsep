@@ -1,5 +1,7 @@
 # MVSEP CLI
 
+[English](./README.md) | [中文](./README_zh.md)
+
 [MVSEP](https://mvsep.com) 音乐分离 API 的命令行工具。
 
 ## 功能特性
@@ -13,14 +15,33 @@
 
 ## 安装
 
+### 环境要求
+
+- Python 3.8+
+- pip
+
+### 从 PyPI 安装（推荐）
+
 ```bash
 pip install mvsep-cli
 ```
 
-或从源码安装：
+### 从源码安装
 
 ```bash
+# 克隆仓库
+git clone https://github.com/mvsep/mvsep-cli.git
+cd mvsep-cli
+
+# 安装
 pip install -e .
+```
+
+### 验证安装
+
+```bash
+mvsep --help
+mvsep config show
 ```
 
 ## 镜像站点
@@ -48,6 +69,11 @@ mvsep config set-token 你的API令牌
 ```
 
 从 https://mvsep.com/user-api 获取 API 令牌
+
+**测试令牌（仅供测试，请勿滥用）**：
+```
+0VZENEq6t0FMsoF6NYRXD021KZHKBg
+```
 
 2. 运行分离任务：
 
@@ -134,3 +160,27 @@ mvsep download 20260227153708-abc123-vocals.wav -o ./output
 ## 许可证
 
 Apache License 2.0
+
+## 常见问题
+
+### Q: 如何升级？
+
+```bash
+pip install --upgrade mvsep-cli
+```
+
+### Q: 配置文件在哪里？
+
+- Linux/macOS: `~/.mvsep_cli_config`
+- Windows: `%USERPROFILE%\.mvsep_cli_config`
+
+### Q: 任务历史在哪里？
+
+- Linux/macOS: `~/.mvsep_tasks.json`
+- Windows: `%USERPROFILE%\.mvsep_tasks.json`
+
+### Q: 如何卸载？
+
+```bash
+pip uninstall mvsep-cli
+```

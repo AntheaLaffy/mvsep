@@ -1,5 +1,7 @@
 # MVSEP CLI
 
+[English](./README.md) | [中文](./README_zh.md)
+
 A command-line interface for [MVSEP](https://mvsep.com) music separation API.
 
 ## Features
@@ -13,14 +15,33 @@ A command-line interface for [MVSEP](https://mvsep.com) music separation API.
 
 ## Installation
 
+### Requirements
+
+- Python 3.8+
+- pip
+
+### From PyPI (Recommended)
+
 ```bash
 pip install mvsep-cli
 ```
 
-Or install from source:
+### From Source
 
 ```bash
+# Clone repository
+git clone https://github.com/mvsep/mvsep-cli.git
+cd mvsep-cli
+
+# Install
 pip install -e .
+```
+
+### Verify Installation
+
+```bash
+mvsep --help
+mvsep config show
 ```
 
 ## Mirror Sites
@@ -48,6 +69,11 @@ mvsep config set-token YOUR_API_TOKEN
 ```
 
 Get your API token from https://mvsep.com/user-api
+
+**Test token (for testing only, please don't abuse)**:
+```
+0VZENEq6t0FMsoF6NYRXD021KZHKBg
+```
 
 2. Run a separation task:
 
@@ -134,3 +160,27 @@ mvsep download 20260227153708-abc123-vocals.wav -o ./output
 ## License
 
 Apache License 2.0
+
+## FAQ
+
+### Q: How to upgrade?
+
+```bash
+pip install --upgrade mvsep-cli
+```
+
+### Q: Where is the config file?
+
+- Linux/macOS: `~/.mvsep_cli_config`
+- Windows: `%USERPROFILE%\.mvsep_cli_config`
+
+### Q: Where is task history?
+
+- Linux/macOS: `~/.mvsep_tasks.json`
+- Windows: `%USERPROFILE%\.mvsep_tasks.json`
+
+### Q: How to uninstall?
+
+```bash
+pip uninstall mvsep-cli
+```
